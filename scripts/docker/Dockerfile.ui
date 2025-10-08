@@ -1,6 +1,6 @@
 # Multi-stage builder to avoid polluting users environment with wrong
 # architecture binaries. This file only currently works for linux/amd64.
-FROM debian:buster AS builder
+FROM ubuntu:22.04 AS builder
 
 ARG VERSION
 ARG CGO_ENABLED=0

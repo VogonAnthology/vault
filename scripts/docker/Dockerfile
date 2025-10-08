@@ -10,8 +10,14 @@ FROM golang:${VERSION} AS builder
 ARG CGO_ENABLED=0
 ARG BUILD_TAGS
 
+# Install git which is required by make bootstrap
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /go/src/github.com/hashicorp/vault
 COPY . .
+
+# Initialize git repository for make bootstrap to work
+RUN git init && git add . && git commit -m "Docker build"
 
 RUN make bootstrap \
   && CGO_ENABLED=$CGO_ENABLED BUILD_TAGS="${BUILD_TAGS}" VAULT_DEV_BUILD=1 sh -c "'./scripts/build.sh'"
