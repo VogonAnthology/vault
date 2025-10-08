@@ -1,0 +1,123 @@
+# Docker Compose pour Vault avec modifications KDF ed25519
+# Version de production basée sur v1.20.4
+
+version: '3.8'
+
+services:
+  vault:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        CGO_ENABLED: 0
+        BUILD_TAGS: "ui"
+    container_name: vault-kdf-custom
+    restart: unless-stopped
+    
+    # Capabilities nécessaires pour la production
+    cap_add:
+      - IPC_LOCK
+    
+    # Ports
+    ports:
+      - "8200:8200"
+      - "8201:8201"  # Port cluster
+    
+    # Variables d'environnement pour la production
+    environment:
+      # Configuration de base
+      - VAULT_ADDR=http://0.0.0.0:8200
+      - VAULT_API_ADDR=http://0.0.0.0:8200
+      - VAULT_CLUSTER_ADDR=https://0.0.0.0:8201
+      
+      # Configuration de stockage et listeners via VAULT_LOCAL_CONFIG
+      - VAULT_LOCAL_CONFIG={
+          "storage": {
+            "file": {
+              "path": "/vault/file"
+            }
+          },
+          "listener": {
+            "tcp": {
+              "address": "0.0.0.0:8200",
+              "tls_disable": false,
+              "tls_cert_file": "/vault/config/vault-cert.pem",
+              "tls_key_file": "/vault/config/vault-key.pem"
+            }
+          },
+          "cluster_addr": "https://0.0.0.0:8201",
+          "api_addr": "https://vault.votre-domaine.com:8200",
+          "ui": true,
+          "log_level": "INFO",
+          "disable_mlock": false
+        }
+      
+      # Désactiver le chown automatique si nécessaire
+      # - SKIP_CHOWN=true
+      
+      # Désactiver setcap si nécessaire  
+      # - SKIP_SETCAP=true
+    
+    # Volumes pour la persistance
+    volumes:
+      # Données persistantes
+      - vault-data:/vault/file
+      - vault-logs:/vault/logs
+      
+      # Configuration (contient les certificats TLS)
+      - ./vault-config:/vault/config:ro
+      
+      # Optionnel: politiques HCL
+      # - ./vault-policies:/vault/policies:ro
+    
+    # Configuration réseau
+    networks:
+      - vault-network
+    
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Limites de ressources pour la production
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    
+    # Labels pour monitoring/organisation
+    labels:
+      - "vault.version=1.20.4-kdf-custom"
+      - "vault.environment=production"
+      - "vault.modifications=ed25519-kdf-fix"
+
+# Volumes nommés pour la persistance
+volumes:
+  vault-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/vault/data
+  
+  vault-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/vault/logs
+
+# Réseau isolé
+networks:
+  vault-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

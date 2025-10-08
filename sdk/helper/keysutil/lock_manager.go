@@ -551,6 +551,23 @@ func (lm *LockManager) ImportPolicy(ctx context.Context, req PolicyRequest, key 
 		}
 	}
 
+	if req.Derived {
+		p.KDF = Kdf_hkdf_sha256
+		if req.Convergent {
+			p.ConvergentEncryption = true
+			// As of version 3 we store the version within each key, so we
+			// set to -1 to indicate that the value in the policy has no
+			// meaning. We still, for backwards compatibility, fall back to
+			// this value if the key doesn't have one, which means it will
+			// only be -1 in the case where every key version is >= 3
+			p.ConvergentVersion = -1
+		}
+	}
+
+	if p.Derived && p.Type == KeyType_ED25519 && p.KDF != Kdf_hkdf_sha256 {
+		p.KDF = Kdf_hkdf_sha256
+	}
+
 	err = p.ImportPublicOrPrivate(ctx, req.Storage, key, req.IsPrivateKey, rand)
 	if err != nil {
 		return fmt.Errorf("error importing key: %s", err)

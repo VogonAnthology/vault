@@ -1,0 +1,100 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+# Dockerfile de production pour Vault avec modifications KDF ed25519
+# Basé sur la version v1.20.4 avec corrections personnalisées
+
+# Multi-stage builder pour éviter de polluer l'image finale
+FROM golang:1.25.2-alpine3.5.4-r0 AS builder
+# Upgrade system packages in the builder image to pick up security fixes
+RUN apk upgrade --no-cache
+
+# Variables d'environnement pour la compilation
+ARG CGO_ENABLED=0
+ARG BUILD_TAGS="ui"
+ARG GOOS=linux
+ARG GOARCH=amd64
+
+# Installer les outils de build nécessaires
+RUN apk add --no-cache \
+    git \
+    make \
+    bash \
+    nodejs \
+    npm \
+    yarn
+
+# Définir le répertoire de travail
+WORKDIR /go/src/github.com/hashicorp/vault
+
+# Copier les fichiers sources
+COPY . .
+
+# Construire Vault avec les modifications KDF
+RUN make bootstrap && \
+    CGO_ENABLED=$CGO_ENABLED \
+    BUILD_TAGS="$BUILD_TAGS" \
+    GOOS=$GOOS \
+    GOARCH=$GOARCH \
+    make bin
+
+# Image finale de production
+FROM alpine:3.18
+
+# Métadonnées
+LABEL maintainer="Votre Organisation"
+LABEL version="1.20.4-kdf-custom"
+LABEL description="HashiCorp Vault v1.20.4 avec corrections KDF ed25519"
+
+# Créer un utilisateur et groupe vault non-root
+RUN addgroup -g 1000 vault && \
+    adduser -D -s /bin/sh -u 1000 -G vault vault
+
+# Installer les dépendances système minimales
+RUN apk add --no-cache \
+    ca-certificates \
+    libcap \
+    su-exec \
+    dumb-init \
+    tzdata \
+    tini && \
+    rm -rf /var/cache/apk/*
+
+# Copier le binaire Vault depuis le builder
+COPY --from=builder /go/src/github.com/hashicorp/vault/bin/vault /bin/vault
+
+# Créer les répertoires nécessaires
+RUN mkdir -p /vault/logs && \
+    mkdir -p /vault/file && \
+    mkdir -p /vault/config && \
+    chown -R vault:vault /vault && \
+    chmod 755 /vault /vault/logs /vault/file /vault/config
+
+# Configurer les capacités pour mlock (sécurité mémoire)
+RUN setcap cap_ipc_lock=+ep /bin/vault
+
+# Copier le script d'entrée depuis le repository officiel et le personnaliser
+COPY scripts/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# Rendre le script exécutable
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Exposer les volumes pour la persistance
+VOLUME ["/vault/logs", "/vault/file"]
+
+# Exposer le port principal de Vault
+EXPOSE 8200
+
+# Utiliser tini comme PID 1 pour une gestion propre des signaux
+ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+
+# Commande par défaut (serveur de développement)
+# ATTENTION: Ne pas utiliser en production
+CMD ["server", "-dev"]
+
+# Configuration de santé
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD vault status || exit 1
+
+# Utilisateur par défaut
+USER vault
