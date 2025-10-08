@@ -17,7 +17,11 @@ WORKDIR /go/src/github.com/hashicorp/vault
 COPY . .
 
 # Initialize git repository for make bootstrap to work
-RUN git init && git add . && git commit -m "Docker build"
+RUN git init && \
+    git config user.email "docker@build.local" && \
+    git config user.name "Docker Build" && \
+    git add . && \
+    git commit -m "Docker build"
 
 RUN make bootstrap \
   && CGO_ENABLED=$CGO_ENABLED BUILD_TAGS="${BUILD_TAGS}" VAULT_DEV_BUILD=1 sh -c "'./scripts/build.sh'"
