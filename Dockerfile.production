@@ -5,7 +5,7 @@
 # Basé sur la version v1.20.4 avec corrections personnalisées
 
 # Multi-stage builder pour éviter de polluer l'image finale
-FROM golang:1.25.2-alpine3.5.4-r0 AS builder
+FROM golang:1.25.2-alpine3.22 AS builder
 # Upgrade system packages in the builder image to pick up security fixes
 RUN apk upgrade --no-cache
 
